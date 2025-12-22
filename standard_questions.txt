@@ -1,0 +1,14 @@
+immunizations - Shows all vaccines
+blood pressure - Shows vital sign history
+covid - Shows COVID-related immunizations
+procedures - Shows all procedures
+active problems - Shows current conditions
+colonoscopy - Shows colonoscopy reports
+weight - Shows weight history with trends
+
+clinical notes - Shows all doctor's procedure notes
+colonoscopy - Shows full colonoscopy report with findings and narrative
+ultrasound - Shows imaging report with complete findings
+procedures - Shows all procedures with full details
+
+
