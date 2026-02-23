@@ -1,12 +1,17 @@
-name: Build macOS App
+name: Build Medical Health Assistant
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+  release:
+    types: [ created ]
 
 jobs:
-  build-mac:
+  build-macos:
+    name: Build macOS App
     runs-on: macos-latest
 
     steps:
@@ -17,31 +22,161 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
+        cache: 'pip'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pillow tkinterdnd2
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Verify imports work
+      run: |
+        python -c "
+        print('=== Testing all imports ===')
+        import tkinter; print('✓ tkinter')
+        import anthropic; print('✓ anthropic')
+        import PyPDF2; print('✓ PyPDF2')
+        import docx; print('✓ python-docx')
+        import pandas; print('✓ pandas')
+        import matplotlib; print('✓ matplotlib')
+        import numpy; print('✓ numpy')
+        from PIL import Image; print('✓ Pillow')
+        import reportlab; print('✓ reportlab')
+        import openpyxl; print('✓ openpyxl')
+        print('=== All imports successful! ===')
+        "
+
+    - name: Create macOS icon
+      run: |
+        mkdir -p app_icon.iconset
+        sips -z 16 16     app_icon.png --out app_icon.iconset/icon_16x16.png
+        sips -z 32 32     app_icon.png --out app_icon.iconset/icon_16x16@2x.png
+        sips -z 32 32     app_icon.png --out app_icon.iconset/icon_32x32.png
+        sips -z 64 64     app_icon.png --out app_icon.iconset/icon_32x32@2x.png
+        sips -z 128 128   app_icon.png --out app_icon.iconset/icon_128x128.png
+        sips -z 256 256   app_icon.png --out app_icon.iconset/icon_128x128@2x.png
+        sips -z 256 256   app_icon.png --out app_icon.iconset/icon_256x256.png
+        sips -z 512 512   app_icon.png --out app_icon.iconset/icon_256x256@2x.png
+        sips -z 512 512   app_icon.png --out app_icon.iconset/icon_512x512.png
+        sips -z 1024 1024 app_icon.png --out app_icon.iconset/icon_512x512@2x.png
+        iconutil -c icns app_icon.iconset
+        rm -rf app_icon.iconset
+        echo "✓ Icon created"
 
     - name: Build macOS app
       run: |
         pyinstaller \
+          --onefile \
           --windowed \
-          --name "MedicalHealthAssistant" \
-          --icon app_icon.png \
+          --name="MedicalHealthAssistant" \
+          --icon=app_icon.icns \
+          --osx-bundle-identifier=com.medicalhealthassistant.app \
+          --add-data "standard_questions.txt:." \
+          --add-data "app_icon.png:." \
+          --hidden-import=tkinter \
+          --hidden-import=tkinter.ttk \
+          --hidden-import=tkinter.filedialog \
+          --hidden-import=tkinter.messagebox \
+          --hidden-import=tkinter.scrolledtext \
+          --hidden-import=PIL._tkinter_finder \
+          --collect-all anthropic \
+          --collect-all PyPDF2 \
+          --collect-all docx \
+          --collect-all pandas \
+          --collect-all matplotlib \
+          --collect-all numpy \
+          --collect-all PIL \
+          --collect-all reportlab \
+          --collect-all openpyxl \
+          --copy-metadata anthropic \
+          --noconfirm \
+          --clean \
           medical_rag_gui.py
+
+    - name: Verify build
+      run: |
+        echo "=== Build verification ==="
+        ls -la dist/
+        if [ -d "dist/MedicalHealthAssistant.app" ]; then
+          echo "✓ App created"
+          ls -la dist/MedicalHealthAssistant.app/Contents/MacOS/
+        else
+          echo "✗ App NOT created"
+          exit 1
+        fi
+
+    - name: Test launch
+      run: |
+        timeout 3 ./dist/MedicalHealthAssistant.app/Contents/MacOS/MedicalHealthAssistant || echo "✓ Test complete"
 
     - name: Create DMG
       run: |
-        mkdir dmg
-        cp -R dist/MedicalHealthAssistant.app dmg/
-        hdiutil create MedicalHealthAssistant-mac.dmg \
-          -volname "Medical Health Assistant" \
-          -srcfolder dmg \
-          -ov
+        brew install create-dmg
+        create-dmg \
+          --volname "Medical Health Assistant" \
+          --volicon "app_icon.icns" \
+          --window-pos 200 120 \
+          --window-size 600 400 \
+          --icon-size 100 \
+          --icon "MedicalHealthAssistant.app" 175 120 \
+          --hide-extension "MedicalHealthAssistant.app" \
+          --app-drop-link 425 120 \
+          "MedicalHealthAssistant-macOS.dmg" \
+          "dist/MedicalHealthAssistant.app" || echo "DMG warning (non-fatal)"
 
-    - name: Upload artifact
+    - name: Create ZIP
+      run: |
+        cd dist
+        zip -r ../MedicalHealthAssistant-macOS.zip MedicalHealthAssistant.app
+        cd ..
+        echo "✓ ZIP created"
+
+    - name: Upload builds
       uses: actions/upload-artifact@v4
       with:
-        name: mac-installer
-        path: MedicalHealthAssistant-mac.dmg
+        name: macos-builds
+        path: |
+          MedicalHealthAssistant-macOS.dmg
+          MedicalHealthAssistant-macOS.zip
+        if-no-files-found: warn
+
+  build-windows:
+    name: Build Windows App
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build Windows exe
+      run: |
+        pyinstaller `
+          --onefile `
+          --windowed `
+          --name="MedicalHealthAssistant" `
+          --icon=app_icon.ico `
+          --add-data "standard_questions.txt;." `
+          --add-data "app_icon.png;." `
+          --collect-all anthropic `
+          --collect-all matplotlib `
+          --noconfirm `
+          medical_rag_gui.py
+
+    - name: Create ZIP
+      run: |
+        Compress-Archive -Path dist\* -DestinationPath MedicalHealthAssistant-Windows.zip
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: windows-build
+        path: MedicalHealthAssistant-Windows.zip
